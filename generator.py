@@ -1,92 +1,64 @@
-"""
-This file is for generating A LOT OF random SCHEDULES (timetables) for our school.
-It will be using cores/threads on procesor to generate a big amout of school schedules/timetables.
-When I say A LOT I mean A LOT.
-It should be using all of the procesor's cores parallelly.
-"""
-"""
-Our school has subjects: M, DS, PSS, A, TV, PIS, TP, C, CIT, WA, PV, AM
-Our school has teachers(subject they teach): Hr(M), Vc(DS), Ms(PSS), Pa(A), Lc(TV), Bc(PIS), Ms(TP), Su(C), Mz(CIT), Hs(WA), Ma(PV), Kl(AM)
-Our school has classrooms(floor they are on, subjects taught there): 25(4, M, A, TP, C, AM), 19(3, PV, PIS, WA), 8(2, PSS), 29(4, A), TV(0, TV), 17(3, CIT, DS), 18(3, PV, PIS, WA)
-Our school has days: Monday, Tuesday, Wednesday, Thursday, Friday
-Our school should have between 6 - 9 hours per day
-"""
+# generator.py
+
 import itertools
-from multiprocessing import Pool
-import time
+import random
+import logging
+from multiprocessing import Manager, Pool, cpu_count
+from functools import partial
 
-# Definition of data
-subjects = ["M", "DS", "PSS", "A", "TV", "PIS", "TP", "C", "CIT", "WA", "PV", "AM"]
-teacher_subjects = {"Hr": ["M"], "Vc": ["DS"], "Ms": ["PSS"], "Pa": ["A"], "Lc": ["TV"],
-                    "Bc": ["PIS"], "Ms": ["TP"], "Su": ["C"], "Mz": ["CIT"], "Hs": ["WA"], "Ma": ["PV"], "Kl": ["AM"]}
-classrooms = {"25": ["M", "A", "TP", "C", "AM"], "19": ["PV", "PIS", "WA"], "8": ["PSS"],
-              "29": ["A"], "TV": ["TV"], "17": ["CIT", "DS"], "18": ["PV", "PIS", "WA"]}
+def generate_schedule(subjects, teachers, classrooms, days=5, periods_per_day=9):
+    schedule = []
+    for day in range(days):
+        daily_schedule = generate_daily_schedule(subjects, teachers, classrooms, periods_per_day)
+        schedule.append(daily_schedule)
+    return schedule
 
-days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-hours = list(range(6, 10))
-
-def generate_schedules(permutation):
-    schedules = []
-    for day_permutation in itertools.permutations(permutation):
-        for hour_permutation in itertools.permutations(hours):
-            schedule = {day: {hour: None for hour in hours} for day in day_permutation}
-            for i, day in enumerate(day_permutation):
-                for j, hour in enumerate(hour_permutation):
-                    subject = permutation[i * len(hours) + j]
-                    classroom = find_classroom(subject)
-                    teacher = find_teacher(subject)
-                    schedule[day][hour] = {"subject": subject, "classroom": classroom, "teacher": teacher}
-            schedules.append(schedule)
-    return schedules
-
-def find_classroom(subject):
-    for classroom, content in classrooms.items():
-        if subject in content:
-            return classroom
-    return None
-
-def find_teacher(subject):
-    for teacher, subjects_taught in teacher_subjects.items():
-        if subject in subjects_taught:
-            return teacher
-    return None
-
-def print_schedule_count_and_schedules(count, schedules):
-    print(f"Generated schedules: {count}")
-    for schedule in schedules:
-        print_schedule(schedule)
+def generate_daily_schedule(subjects, teachers, classrooms, periods_per_day):
+    daily_schedule = []
+    for period in range(periods_per_day):
+        subject = random.choice(subjects)
+        teacher = random.choice(teachers[subject])
+        classroom = random.choice(classrooms[subject])
+        daily_schedule.append((subject, teacher, classroom))
+    return daily_schedule
 
 def print_schedule(schedule):
-    print("Generated Schedule:")
-    for day, hours in schedule.items():
-        print(f"{day}: {hours}")
+    logging.info("\nGenerated Schedule:")
+    for day, daily_schedule in enumerate(schedule, start=1):
+        logging.info(f"\nDay {day}:")
+        for period, (subject, teacher, classroom) in enumerate(daily_schedule, start=1):
+            logging.info(f"  Period {period}: Subject={subject}, Teacher={teacher}, Classroom={classroom}")
+
+def generate_and_count(args):
+    subjects, teachers, classrooms, schedule_count, lock = args
+    schedule = generate_schedule(subjects, teachers, classrooms)
+    with lock:
+        schedule_count.value += 1
+        logging.info(f"\rGenerated schedules: {schedule_count.value}")
+        print_schedule(schedule)  # Print the generated schedule
+    return schedule
+
+def generate_schedules_parallel(args):
+    subjects, teachers, classrooms, processes = args
+    with Manager() as manager:
+        schedule_count = manager.Value('i', 0)
+        lock = manager.Lock()
+        partial_generate = partial(generate_and_count, (subjects, teachers, classrooms, schedule_count, lock))
+        with Pool(processes=processes) as pool:
+            pool.map(partial_generate, itertools.count())
 
 if __name__ == "__main__":
-    permutations_subjects = list(itertools.permutations(subjects))
-    permutations_days = list(itertools.permutations(days))
+    import sys
+    logging.basicConfig(filename='generator_log.txt', level=logging.INFO)
 
-    num_cores = 6  # Change this to the number of available cores on your computer
-    permutations_subjects_chunked = [permutations_subjects[i::num_cores] for i in range(num_cores)]
+    subjects = ["M", "DS", "PSS", "A", "TV", "PIS", "TP", "C", "CIT", "WA", "PV", "AM"]
+    teachers = {"M": "Hr", "DS": "Vc", "PSS": "Ms", "A": "Pa", "TV": "Lc", "PIS": "Bc", "TP": "Ms", "C": "Su",
+                "CIT": "Mz", "WA": "Hs", "PV": "Ma", "AM": "Kl"}
+    classrooms = {"M": [25], "DS": [25], "PSS": [8], "A": [29], "TV": ["TV"], "PIS": [19], "TP": [29], "C": [25],
+                  "CIT": [17], "WA": [19], "PV": [19], "AM": [25]}
 
-    with Pool(num_cores) as pool:
-        results = []
-        schedule_count = 0
-        start_time = time.time()
-        print_interval = 1  # Print count every second
-        while True:
-            for result in pool.imap_unordered(generate_schedules, permutations_subjects_chunked):
-                results.append(result)
-                schedule_count += len(result)
+    processes = cpu_count()  # Use all available CPU cores
 
-            current_time = time.time()
-            elapsed_time = current_time - start_time
-            # Print the count and schedules every second
-            if elapsed_time >= print_interval:
-                print_schedule_count_and_schedules(schedule_count, [schedule for result in results for schedule in result])
-                start_time = current_time
-                schedule_count = 0  # Reset count
+    args = (subjects, teachers, classrooms, processes)
 
-    # The loop is infinite, so this part will never be reached in normal circumstances
-    # If you want to continue working with the final_schedules, you might consider breaking out of the loop.
-    final_schedules = [schedule for result in results for schedule in result]
-    print(f"Total number of generated schedules: {len(final_schedules)}")
+    generate_schedules_parallel(args)
