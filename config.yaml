@@ -1,0 +1,34 @@
+# config.yaml
+
+hours_per_day:
+  min: 6
+  max: 10
+max_empty_hours_per_day: 1  # Přidáme tuto řádku
+days_per_week: 5
+
+subjects:
+  - M
+  - DS
+  - PSS
+  - A
+  - TV
+  - PIS
+  - TP
+  - C
+  - CIT
+  - WA
+  - PV
+  - AM
+
+floors:
+  - 1
+  - 2
+  - 3
+  - 4
+
+days:
+  - Monday
+  - Tuesday
+  - Wednesday
+  - Thursday
+  - Friday
