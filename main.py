@@ -1,55 +1,10 @@
+# main.py
 import yaml
-import random
-import time
 import multiprocessing
-
-def generate_daily_schedule(subjects, min_hours, max_hours, max_empty_hours):
-    num_hours = random.randint(min_hours, max_hours)
-    max_empty_hours = min(num_hours - 1, max_empty_hours)
-
-    # Determine the number of empty slots (at most one)
-    num_empty_slots = min(max_empty_hours, 1)
-
-    # Create a list of subjects and empty slots
-    schedule_items = subjects + ['____'] * num_empty_slots
-
-    # Shuffle the list
-    random.shuffle(schedule_items)
-
-    # Trim the list to the desired number of hours
-    daily_schedule = schedule_items[:num_hours]
-
-    return daily_schedule
-
-def has_duplicate_hours(schedule):
-    hours_set = set()
-    for hour in schedule:
-        if hour in hours_set:
-            return True
-        if hour != '____':
-            hours_set.add(hour)
-    return False
-
-def evaluate_schedule(schedule, evaluation_criteria):
-    total_penalty = 0
-
-    for day, subjects in schedule:
-        if has_duplicate_hours(subjects):
-            total_penalty += evaluation_criteria['duplicate_hours_penalty']
-
-        daily_hours = len(subjects)
-        if daily_hours == 6:
-            total_penalty += evaluation_criteria['6_hours_bonus']
-        elif daily_hours == 7:
-            total_penalty += evaluation_criteria['7_hours_bonus']
-        elif daily_hours == 8:
-            total_penalty += evaluation_criteria['8_hours_penalty']
-        elif daily_hours == 9:
-            total_penalty += evaluation_criteria['9_hours_penalty']
-        elif daily_hours == 10:
-            total_penalty += evaluation_criteria['10_hours_penalty']
-
-    return total_penalty
+from generator import generate_daily_schedule
+from evaluator import has_duplicate_hours, count_free_hours, evaluate_schedule
+from watchdog import watchdog
+import time
 
 def generate_schedule_worker(config, output_queue, progress_counter, exit_flag, best_schedule_lock, best_schedule, evaluation_criteria):
     while not exit_flag.value:
@@ -88,7 +43,7 @@ def main():
     exit_flag = multiprocessing.Value('i', 0)
     best_schedule_lock = multiprocessing.Lock()
     best_schedule = multiprocessing.Manager().list()
-    
+
     # Define your evaluation criteria here
     evaluation_criteria = {
         'duplicate_hours_penalty': -1000,
@@ -96,7 +51,10 @@ def main():
         '7_hours_bonus': 50,
         '8_hours_penalty': -1,
         '9_hours_penalty': -100,
-        '10_hours_penalty': -250
+        '10_hours_penalty': -250,
+        'first_hour_penalty': -100,
+        'free_hour_in_first_4_hours_penalty': -1000,  # New criterion for free hour in the first 4 hours penalty
+        'multiple_free_hours_penalty': -100  # New criterion for multiple free hours penalty
         # Add more criteria as needed
     }
 
@@ -113,19 +71,18 @@ def main():
 
     # Watchdog loop
     start_time = time.time()
-    while time.time() - start_time < 20:
-        with progress_counter.get_lock():
-            progress = progress_counter.value
-        print(f"Progress: {progress} schedules generated")
-        time.sleep(0.1)
-
-    # Set exit flag to terminate processes
-    with exit_flag.get_lock():
-        exit_flag.value = 1
+    watchdog_thread = multiprocessing.Process(target=watchdog, args=(progress_counter, start_time, exit_flag))
+    watchdog_thread.start()
 
     # Wait for processes to finish
     for process in processes:
         process.join(timeout=1)  # Add a timeout to prevent indefinite waiting
+
+    # Set exit flag to terminate watchdog thread
+    with exit_flag.get_lock():
+        exit_flag.value = 1
+
+    watchdog_thread.join()
 
     # Find the best schedule among the generated ones
     best_schedule_list = best_schedule[:]
