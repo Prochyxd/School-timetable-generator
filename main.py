@@ -1,12 +1,29 @@
 # main.py
+
 import yaml
 import multiprocessing
-from generator import generate_daily_schedule
-from evaluator import has_duplicate_hours, count_free_hours, evaluate_schedule
-from watchdog import watchdog
 import time
 
+from generator import generate_daily_schedule
+from evaluator import has_duplicate_hours, evaluate_schedule
+from watchdog import watchdog
+
 def generate_schedule_worker(config, output_queue, progress_counter, exit_flag, best_schedule_lock, best_schedule, evaluation_criteria):
+    """
+    Worker function for generating schedules.
+
+    Parameters:
+    - config (dict): Configuration data loaded from `config.yaml`.
+    - output_queue (multiprocessing.Queue): Queue for storing generated schedules.
+    - progress_counter (multiprocessing.Value): Counter for the progress of schedule generation.
+    - exit_flag (multiprocessing.Value): Flag to signal termination.
+    - best_schedule_lock (multiprocessing.Lock): Lock for accessing the best schedule.
+    - best_schedule (multiprocessing.Manager().list): Manager list for storing the best schedule.
+    - evaluation_criteria (dict): Dictionary containing evaluation criteria and associated penalties/bonuses.
+
+    Returns:
+    - None
+    """
     while not exit_flag.value:
         schedule = {}
         for day in config['days']:
@@ -43,18 +60,16 @@ def main():
     exit_flag = multiprocessing.Value('i', 0)
     best_schedule_lock = multiprocessing.Lock()
     best_schedule = multiprocessing.Manager().list()
-
+    
     # Define your evaluation criteria here
     evaluation_criteria = {
         'duplicate_hours_penalty': -1000,
+        'multiple_free_hours_penalty': -100,
         '6_hours_bonus': 100,
         '7_hours_bonus': 50,
         '8_hours_penalty': -1,
         '9_hours_penalty': -100,
-        '10_hours_penalty': -250,
-        'first_hour_penalty': -100,
-        'free_hour_in_first_4_hours_penalty': -1000,  # New criterion for free hour in the first 4 hours penalty
-        'multiple_free_hours_penalty': -100  # New criterion for multiple free hours penalty
+        '10_hours_penalty': -250
         # Add more criteria as needed
     }
 
@@ -71,18 +86,17 @@ def main():
 
     # Watchdog loop
     start_time = time.time()
-    watchdog_thread = multiprocessing.Process(target=watchdog, args=(progress_counter, start_time, exit_flag))
-    watchdog_thread.start()
+    watchdog_process = multiprocessing.Process(
+        target=watchdog,
+        args=(progress_counter, start_time, exit_flag)
+    )
+    watchdog_process.start()
 
-    # Wait for processes to finish
     for process in processes:
         process.join(timeout=1)  # Add a timeout to prevent indefinite waiting
 
-    # Set exit flag to terminate watchdog thread
-    with exit_flag.get_lock():
-        exit_flag.value = 1
-
-    watchdog_thread.join()
+    # Wait for the watchdog process to finish
+    watchdog_process.join()
 
     # Find the best schedule among the generated ones
     best_schedule_list = best_schedule[:]
