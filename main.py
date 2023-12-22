@@ -1,37 +1,35 @@
-# main.py
-import argparse
+import time
+import config
 import yaml
-from generator import generate_schedules
-from watchdog import watchdog_timer
-from multiprocessing import Process, Value, Lock
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="School Schedule Generator")
-    parser.add_argument("-r", "--random", action="store_true", help="Generate a random schedule")
-    parser.add_argument("-n", "--num_schedules", type=int, default=1, help="Number of schedules to generate")
-    parser.add_argument("-d", "--duration", type=int, default=10, help="Duration (in seconds) for generating schedules")
-    parser.add_argument("-p", "--num_processes", type=int, default=4, help="Number of processes for parallel generation")
-    return parser.parse_args()
+from generator import generate_schedule
 
 def main():
-    args = parse_arguments()
-
     with open("config.yaml", "r") as config_file:
-        config = yaml.safe_load(config_file)
+        config_data = yaml.safe_load(config_file)
 
-    # Initialize global variables for tracking the number of generated schedules
-    counter = Value('i', 0)
-    counter_lock = Lock()
+    
+    # Generate a random schedule
+    schedule = generate_schedule(config_data)
+    for day, subjects in schedule.items():
+        print(f"{day}: {', '.join(subjects)}")
 
-    # Start the watchdog process to monitor the generation time
-    watchdog_process = Process(target=watchdog_timer, args=(args.duration, counter, counter_lock))
-    watchdog_process.start()
+    #Generate as many schedules as possible in one minute
+    num_schedules = 0
+    start_time = time.time()
 
-    # Generate schedules
-    generated_schedules = generate_schedules(config, args.num_processes, args.duration, counter, counter_lock)
+    while True:
+        schedule = generate_schedule(config_data)
+        num_schedules += 1
 
-    # Wait for the watchdog process to finish
-    watchdog_process.join()
+        elapsed_time = time.time() - start_time
+        if elapsed_time >= 180:
+            break
+
+    print(f"Generated {num_schedules} schedules in {elapsed_time} seconds")
 
 if __name__ == "__main__":
     main()
+
+
+
+    #Generated 8694215 schedules in 180.0014967918396 seconds
