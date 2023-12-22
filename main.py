@@ -31,22 +31,25 @@ def has_duplicate_hours(schedule):
     return False
 
 def evaluate_schedule(schedule, evaluation_criteria):
-    if has_duplicate_hours(schedule):
-        return evaluation_criteria['duplicate_hours_penalty']
+    total_penalty = 0
 
-    total_hours = sum(len(subjects) for day, subjects in schedule)
-    
-    # Evaluate based on the total hours per day
-    if total_hours == 6 or total_hours == 7:
-        return evaluation_criteria['6_7_hours_bonus']
-    elif total_hours == 8:
-        return evaluation_criteria['8_hours_penalty']
-    elif total_hours == 9:
-        return evaluation_criteria['9_hours_penalty']
-    elif total_hours == 10:
-        return evaluation_criteria['10_hours_penalty']
+    for day, subjects in schedule:
+        if has_duplicate_hours(subjects):
+            total_penalty += evaluation_criteria['duplicate_hours_penalty']
 
-    return 0  # Default score
+        daily_hours = len(subjects)
+        if daily_hours == 6:
+            total_penalty += evaluation_criteria['6_hours_bonus']
+        elif daily_hours == 7:
+            total_penalty += evaluation_criteria['7_hours_bonus']
+        elif daily_hours == 8:
+            total_penalty += evaluation_criteria['8_hours_penalty']
+        elif daily_hours == 9:
+            total_penalty += evaluation_criteria['9_hours_penalty']
+        elif daily_hours == 10:
+            total_penalty += evaluation_criteria['10_hours_penalty']
+
+    return total_penalty
 
 def generate_schedule_worker(config, output_queue, progress_counter, exit_flag, best_schedule_lock, best_schedule, evaluation_criteria):
     while not exit_flag.value:
@@ -89,7 +92,8 @@ def main():
     # Define your evaluation criteria here
     evaluation_criteria = {
         'duplicate_hours_penalty': -1000,
-        '6_7_hours_bonus': 100,
+        '6_hours_bonus': 100,
+        '7_hours_bonus': 50,
         '8_hours_penalty': -1,
         '9_hours_penalty': -100,
         '10_hours_penalty': -250
@@ -113,7 +117,7 @@ def main():
         with progress_counter.get_lock():
             progress = progress_counter.value
         print(f"Progress: {progress} schedules generated")
-        time.sleep(1)
+        time.sleep(0.1)
 
     # Set exit flag to terminate processes
     with exit_flag.get_lock():
